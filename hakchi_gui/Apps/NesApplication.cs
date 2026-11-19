@@ -19,7 +19,6 @@ namespace com.clusterrr.hakchi_gui
 
         public static Form ParentForm;
         public static bool? NeedPatch;
-        public static bool? Need3rdPartyEmulator;
         public static bool? NeedAutoDownloadCover;
         public static string[] CachedCoverFiles;
 

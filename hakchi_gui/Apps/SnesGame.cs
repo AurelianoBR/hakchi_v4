@@ -16,6 +16,8 @@ namespace com.clusterrr.hakchi_gui
         public enum SnesRomType { LoRom = 0x14, HiRom = 0x15 };
 
         const string DefaultCanoeArgs = "--volume 100 -rollback-snapshot-period 600";
+        // RetroArch core for games Canoe can't run; snes9x2010 handles S-DD1/DSP-4 and is light enough for the Mini
+        const string ProblemGameCore = "snes9x2010";
         static List<byte> SfxTypes = new List<byte>() { 0x13, 0x14, 0x15, 0x1a };
         static List<byte> Dsp1Types = new List<byte>() { 0x03, 0x05 };
         static List<byte> SA1Types = new List<byte>() { 0x34, 0x35 };
@@ -173,6 +175,22 @@ namespace com.clusterrr.hakchi_gui
                 crc32 = Shared.CRC32(rawRomData);
             }
 
+            // Games using chips Canoe can't emulate (S-DD1, DSP-4, ...) always go to RetroArch,
+            // before any SFROM conversion (the SFROM Tool path would otherwise force Canoe).
+            if (IsProblemGame(rawRomData, ref saveCount))
+            {
+                FindPatch(ref rawRomData, inputFileName, crc32);
+                // ponytail: single preferred core; falls back to the default SNES core (snes9x) when not installed
+                var core = CoreCollection.GetCore(ProblemGameCore);
+                if (core != null)
+                {
+                    application = core.QualifiedBin;
+                    args = core.DefaultArgs;
+                }
+                Trace.WriteLine($"Problem game for Canoe, using RetroArch: {application}");
+                return true;
+            }
+
             // check if we can use sfrom tool
             if (ConfigIni.Instance.ConvertToSFROM)
             {
@@ -217,10 +235,9 @@ namespace com.clusterrr.hakchi_gui
                     if (ConfigIni.Instance.ConvertToSFROM)
                     {
                         Trace.WriteLine($"Trying to convert {inputFileName}");
-                        bool problemGame = false;
                         try
                         {
-                            MakeSfrom(ref rawRomData, ref saveCount, out problemGame);
+                            MakeSfrom(ref rawRomData, ref saveCount);
                         }
                         catch (Exception ex)
                         {
@@ -228,29 +245,9 @@ namespace com.clusterrr.hakchi_gui
                             return false;
                         }
 
-                        // Using 3rd party emulator for this ROM?
                         outputFileName = Path.GetFileNameWithoutExtension(outputFileName) + ".sfrom";
-                        if (problemGame && Need3rdPartyEmulator != true)
-                        {
-                            if (Need3rdPartyEmulator != false)
-                            {
-                                var result = Tasks.MessageForm.Show(ParentForm, Resources.AreYouSure,
-                                    string.Format(Resources.Need3rdPartyEmulator, Path.GetFileName(inputFileName)),
-                                    Resources.sign_warning,
-                                    new Tasks.MessageForm.Button[] { Tasks.MessageForm.Button.YesToAll, Tasks.MessageForm.Button.Yes, Tasks.MessageForm.Button.No },
-                                    Tasks.MessageForm.DefaultButton.Button2);
-                                if (result == Tasks.MessageForm.Button.YesToAll)
-                                    Need3rdPartyEmulator = true;
-                                if (result == Tasks.MessageForm.Button.No)
-                                    problemGame = false;
-                            }
-                            else problemGame = false;
-                        }
-                        if (!problemGame)
-                        {
-                            application = "/bin/clover-canoe-shvc-wr -rom";
-                            args = DefaultCanoeArgs;
-                        }
+                        application = "/bin/clover-canoe-shvc-wr -rom";
+                        args = DefaultCanoeArgs;
                     }
                 }
             }
@@ -317,7 +314,25 @@ namespace com.clusterrr.hakchi_gui
             return romHeader;
         }
 
-        private static void MakeSfrom(ref byte[] rawRomData, ref byte saveCount, out bool problemGame)
+        private static bool IsProblemGame(byte[] rawRomData, ref byte saveCount)
+        {
+            try
+            {
+                var romHeader = GetCorrectHeader(rawRomData, out _, out string gameTitle);
+                if (!problemGames.Contains(gameTitle))
+                    return false;
+                saveCount = (byte)(romHeader.SramSize > 0 ? 3 : 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // unreadable header: let the regular import path report it
+                Trace.WriteLine("Error reading ROM header: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static void MakeSfrom(ref byte[] rawRomData, ref byte saveCount)
         {
             SnesRomType romType;
             string gameTitle;
@@ -371,8 +386,6 @@ namespace com.clusterrr.hakchi_gui
                 saveCount = 3;
             else
                 saveCount = 0;
-
-            problemGame = problemGames.Contains(gameTitle);
 
             rawRomData = result;
         }

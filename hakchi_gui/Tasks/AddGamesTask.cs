@@ -68,7 +68,6 @@ namespace com.clusterrr.hakchi_gui.Tasks
             // static presets
             NesApplication.ParentForm = tasker.HostForm;
             NesApplication.NeedPatch = null;
-            NesApplication.Need3rdPartyEmulator = null;
             NesApplication.CachedCoverFiles = null;
             NesGame.IgnoreMapper = null;
             SnesGame.NeedAutoDownloadCover = null;
