@@ -21,3 +21,5 @@ GeneratedData/
 Installer/**/
 Web Installer/**/
 ZIP Files/**/
+# Stock kernel dumps (Nintendo firmware, never commit)
+/Kernel/
